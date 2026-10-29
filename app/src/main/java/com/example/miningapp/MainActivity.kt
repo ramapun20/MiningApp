@@ -2,6 +2,7 @@ package com.example.miningapp
 
 import android.Manifest
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -12,8 +13,10 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.drawable.GradientDrawable
 import android.location.Location
+import android.location.LocationManager
 import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.util.Log
 import android.view.View
 import android.widget.Toast
@@ -144,6 +147,16 @@ private fun Context.hasLocationPermission(): Boolean =
     ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
         ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
+private fun Context.isDeviceLocationEnabled(): Boolean {
+    val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+    return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+        locationManager.isLocationEnabled
+    } else {
+        locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
+            locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+    }
+}
+
 private fun phoneAuthFailureMessage(error: Exception): String {
     if (error is FirebaseNetworkException) {
         return "Firebase could not connect. Check your internet connection, then try again."
@@ -260,6 +273,9 @@ private fun MiningApp() {
     var hasLocationPermission by remember {
         mutableStateOf(context.hasLocationPermission())
     }
+    var isDeviceLocationEnabled by remember {
+        mutableStateOf(context.isDeviceLocationEnabled())
+    }
     var locationMessage by remember {
         mutableStateOf<String?>(
             if (context.hasLocationPermission()) "Waiting for your current location..."
@@ -268,6 +284,17 @@ private fun MiningApp() {
     }
     var returnToMapAfterPermission by rememberSaveable { mutableStateOf(false) }
     val signedInUserId = authRepository?.currentUserId
+
+    DisposableEffect(page, lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                isDeviceLocationEnabled = context.isDeviceLocationEnabled()
+                hasLocationPermission = context.hasLocationPermission()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     DisposableEffect(page, signedInUserId) {
         if (page != Page.ChatThread) {
@@ -420,8 +447,12 @@ private fun MiningApp() {
         hasLocationPermission = context.hasLocationPermission()
         if (hasLocationPermission) {
             locationMessage = "Waiting for your current location..."
-            if (!returnToMapAfterPermission) {
-                page = Page.Consent
+            page = if (returnToMapAfterPermission) {
+                returnToMapAfterPermission = false
+                isDeviceLocationEnabled = context.isDeviceLocationEnabled()
+                if (isDeviceLocationEnabled) Page.Map else Page.Location
+            } else {
+                Page.Consent
             }
         } else {
             locationMessage = if (permissions.values.any { it }) {
@@ -551,6 +582,7 @@ private fun MiningApp() {
                         page = when (it) {
                             "Maps" -> {
                                 returnToMapAfterPermission = true
+                                isDeviceLocationEnabled = context.isDeviceLocationEnabled()
                                 Page.Location
                             }
                             "Profile" -> Page.Profile
@@ -714,6 +746,7 @@ private fun MiningApp() {
                         page = backPage
                     },
                     hasLocationPermission = hasLocationPermission,
+                    isDeviceLocationEnabled = isDeviceLocationEnabled,
                     isMapRequest = returnToMapAfterPermission,
                     onEnableLocation = {
                         if (!context.hasLocationPermission()) {
@@ -725,13 +758,24 @@ private fun MiningApp() {
                             )
                         }
                     },
+                    onOpenLocationSettings = {
+                        try {
+                            context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                        } catch (error: ActivityNotFoundException) {
+                            Log.e("MiningAppLocation", "Unable to open device location settings.", error)
+                            locationMessage = "Open your device Settings and turn on Location."
+                        }
+                    },
                     onContinue = {
                         if (context.hasLocationPermission()) {
                             hasLocationPermission = true
+                            isDeviceLocationEnabled = context.isDeviceLocationEnabled()
                             locationMessage = "Waiting for your current location..."
-                            if (returnToMapAfterPermission) {
+                            if (returnToMapAfterPermission && isDeviceLocationEnabled) {
                                 returnToMapAfterPermission = false
                                 page = Page.Map
+                            } else if (returnToMapAfterPermission) {
+                                locationMessage = "Turn on your device's Location setting to show your location on the map."
                             } else {
                                 page = Page.Consent
                             }
@@ -749,7 +793,20 @@ private fun MiningApp() {
                 )
                 Page.Consent -> ConsentScreen(
                     onConfirm = { page = Page.Marketplace },
-                    onDismiss = { page = Page.Location }
+                    onDismiss = { page = Page.Location },
+                    onEnableLocation = {
+                        returnToMapAfterPermission = false
+                        if (context.hasLocationPermission()) {
+                            hasLocationPermission = true
+                        } else {
+                            locationPermissionLauncher.launch(
+                                arrayOf(
+                                    Manifest.permission.ACCESS_FINE_LOCATION,
+                                    Manifest.permission.ACCESS_COARSE_LOCATION
+                                )
+                            )
+                        }
+                    }
                 )
                 Page.Marketplace -> MarketplaceScreen(
                     products = products,
@@ -1005,8 +1062,10 @@ private fun LocationScreen(
     onBack: () -> Unit,
     onContinue: () -> Unit,
     hasLocationPermission: Boolean,
+    isDeviceLocationEnabled: Boolean,
     isMapRequest: Boolean,
     onEnableLocation: () -> Unit,
+    onOpenLocationSettings: () -> Unit,
     location: Location?,
     locationMessage: String?
 ) {
@@ -1015,39 +1074,62 @@ private fun LocationScreen(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(Modifier.height(18.dp))
-        TopLine(title = "Location access", onBack = onBack)
-        Spacer(Modifier.height(42.dp))
-        Text(
-            "Enable your location",
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold,
-            color = Ink,
-            textAlign = TextAlign.Center
-        )
-        Spacer(Modifier.height(10.dp))
-        Text(
-            "Allow location access to see your position on the map.",
-            fontSize = 15.sp,
-            color = Muted,
-            textAlign = TextAlign.Center
-        )
-        Spacer(Modifier.height(32.dp))
-        LiveLocationStatus(if (hasLocationPermission) location else null, locationMessage)
+        TopLine(title = if (isMapRequest) "" else "Location access", onBack = onBack)
+        if (!isMapRequest) {
+            Spacer(Modifier.height(42.dp))
+            Text(
+                "Enable your location",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                color = Ink,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "Allow location access to see your position on the map.",
+                fontSize = 15.sp,
+                color = Muted,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(32.dp))
+            if (isMapRequest && hasLocationPermission && !isDeviceLocationEnabled) {
+                Text(
+                    "Your phone's Location is turned off. Turn it on to show your location on the map.",
+                    fontSize = 15.sp,
+                    color = Color(0xFFB3261E),
+                    textAlign = TextAlign.Center
+                )
+            } else {
+                LiveLocationStatus(if (hasLocationPermission) location else null, locationMessage)
+            }
+        } else {
+            Spacer(Modifier.weight(1f))
+        }
         Spacer(Modifier.weight(1f))
         PrimaryButton(
             label = when {
+                !hasLocationPermission && isMapRequest -> "Enable your location"
                 !hasLocationPermission -> "Enable location access"
+                isMapRequest && !isDeviceLocationEnabled -> "Turn on Location"
                 isMapRequest -> "Open map"
                 else -> "Continue"
             },
-            onClick = if (hasLocationPermission) onContinue else onEnableLocation
+            onClick = when {
+                !hasLocationPermission -> onEnableLocation
+                isMapRequest && !isDeviceLocationEnabled -> onOpenLocationSettings
+                else -> onContinue
+            }
         )
         Spacer(Modifier.height(20.dp))
     }
 }
 
 @Composable
-private fun ConsentScreen(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+private fun ConsentScreen(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+    onEnableLocation: () -> Unit
+) {
     Box(Modifier.fillMaxSize().background(Color.White)) {
         Column(
             Modifier.fillMaxWidth().padding(horizontal = 28.dp).padding(top = 52.dp)
@@ -1058,17 +1140,17 @@ private fun ConsentScreen(onConfirm: () -> Unit, onDismiss: () -> Unit) {
                 Text("Search by area", modifier = Modifier.weight(1f).background(Color(0xFFE7E7E7)).padding(8.dp), textAlign = TextAlign.Center, color = Muted)
             }
             Spacer(Modifier.height(4.dp))
-            PrimaryButton("⌖   Enable Location", onDismiss)
+            PrimaryButton("⌖   Enable Location", onEnableLocation)
         }
         Column(
             Modifier.fillMaxWidth().fillMaxSize(0.79f).align(Alignment.Center)
                 .padding(horizontal = 34.dp).clip(RoundedCornerShape(52.dp))
                 .background(Color.White).padding(horizontal = 18.dp, vertical = 48.dp)
         ) {
-            Text("Consent is required to use Dahabi", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Ink)
+            Text("Consent is required to use Mining App", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Ink)
             Spacer(Modifier.height(14.dp))
             Text(
-                "Dahabi collects basic information\nThat helps in maintaining the integrity.\nThe user should also be an adult over\n18 years old.",
+                "Mining App collects basic information\nthat helps maintain integrity.\nUsers must be 18 years or older.",
                 fontSize = 14.sp,
                 lineHeight = 18.sp,
                 color = Ink
