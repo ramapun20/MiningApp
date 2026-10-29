@@ -67,7 +67,9 @@ service cloud.firestore {
 
       allow read: if isOwner() || isAdmin();
       allow create: if (isOwner() || isAdmin()) && hasValidMessage();
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if isOwner()
+        && resource.data.senderUid == request.auth.uid;
     }
   }
 }

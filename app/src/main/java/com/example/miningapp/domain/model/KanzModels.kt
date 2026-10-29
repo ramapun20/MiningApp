@@ -37,7 +37,8 @@ data class ChatMessage(
     val sender: String,
     val text: String,
     val timestamp: Long,
-    val isOutgoing: Boolean
+    val isOutgoing: Boolean,
+    val documentId: String? = null
 )
 
 data class ChatContact(

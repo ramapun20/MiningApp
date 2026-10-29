@@ -58,6 +58,8 @@ Admin SDK; never let a client assign its own claim. Deploy the updated
 `firestore.rules` after enabling Firestore. This app provides the account
 holder's chat client; an authenticated admin client or trusted support workflow
 must be configured separately to read and reply to user conversations.
+Account holders can delete only their own sent messages; this is enforced by
+the Firestore rules.
 For this project's local debug build, `.\gradlew signingReport` reports SHA-1
 `D6:76:13:62:13:F3:3E:A2:9A:F4:3E:D8:EE:6E:16:6F:3B:58:9F:35` and SHA-256
 `C4:B3:47:64:9F:3B:42:81:8B:69:57:58:24:0C:A0:D1:D4:2D:9A:63:1D:49:74:3D:B1:8E:E3:50:D5:8B:29:EA`.

@@ -103,6 +103,7 @@ import com.example.miningapp.domain.usecase.PhoneInputValidation
 import com.example.miningapp.data.auth.FirebasePhoneAuthRepository
 import com.example.miningapp.data.auth.loadCurrentUserProfile
 import com.example.miningapp.data.auth.listenToAdminChat
+import com.example.miningapp.data.auth.deleteAdminChatMessage
 import com.example.miningapp.data.auth.saveCurrentUserToFirestore
 import com.example.miningapp.data.auth.sendAdminChatMessage
 import com.google.android.gms.location.LocationCallback
@@ -212,7 +213,7 @@ private fun chatFailureMessage(action: String, error: Exception): String {
     val detail = error.localizedMessage?.takeIf(String::isNotBlank)
     return when ((error as? FirebaseFirestoreException)?.code) {
         FirebaseFirestoreException.Code.PERMISSION_DENIED ->
-            "Firestore denied the attempt to $action this chat. Deploy the latest rules with `firebase deploy --only firestore:rules` and confirm this phone is signed in. ${detail.orEmpty()}"
+            "Firestore denied the attempt to $action this chat. This app stores messages at `supportChats/{userId}/messages`; publish rules for that exact path, including the owner-only delete rule, then retry. ${detail.orEmpty()}"
         FirebaseFirestoreException.Code.UNAUTHENTICATED ->
             "Your sign-in expired. Sign in again to use admin chat. ${detail.orEmpty()}"
         FirebaseFirestoreException.Code.UNAVAILABLE,
@@ -931,6 +932,23 @@ private fun MiningApp() {
                                 }
                             )
                         }
+                    },
+                    onDeleteMessage = { message ->
+                        val userId = signedInUserId
+                        val messageId = message.documentId
+                        if (userId == null || messageId == null) {
+                            chatError = "This message cannot be deleted. Sign in again and retry."
+                        } else {
+                            deleteAdminChatMessage(
+                                userId = userId,
+                                messageId = messageId,
+                                onSuccess = { chatError = null },
+                                onFailure = { error ->
+                                    Log.e("MiningAppChat", "Unable to delete the chat message.", error)
+                                    chatError = chatFailureMessage("delete", error)
+                                }
+                            )
+                        }
                     }
                 )
             }
@@ -1420,9 +1438,11 @@ private fun ChatThreadScreen(
     messages: List<ChatMessage>,
     errorText: String?,
     onBack: () -> Unit,
-    onSend: (String, () -> Unit) -> Unit
+    onSend: (String, () -> Unit) -> Unit,
+    onDeleteMessage: (ChatMessage) -> Unit
 ) {
     var draft by rememberSaveable { mutableStateOf("") }
+    var selectedMessageId by rememberSaveable { mutableStateOf<String?>(null) }
     val messageListState = rememberLazyListState()
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) messageListState.animateScrollToItem(messages.lastIndex)
@@ -1461,12 +1481,16 @@ private fun ChatThreadScreen(
                     )
                 }
             }
-            items(messages, key = { it.id }) { message ->
+            items(messages, key = { it.documentId ?: it.id.toString() }) { message ->
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = if (message.isOutgoing) Arrangement.End else Arrangement.Start
                 ) {
                     Surface(
+                        modifier = Modifier.clickable(enabled = message.isOutgoing) {
+                            selectedMessageId =
+                                if (selectedMessageId == message.documentId) null else message.documentId
+                        },
                         shape = RoundedCornerShape(16.dp),
                         color = if (message.isOutgoing) Color(0xFFD8F2E9) else Color.White,
                         shadowElevation = 1.dp
@@ -1486,6 +1510,17 @@ private fun ChatThreadScreen(
                                     fontSize = 10.sp,
                                     modifier = Modifier.align(Alignment.End).padding(top = 3.dp)
                                 )
+                            }
+                            if (message.isOutgoing && selectedMessageId == message.documentId) {
+                                TextButton(
+                                    onClick = {
+                                        onDeleteMessage(message)
+                                        selectedMessageId = null
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp)
+                                ) {
+                                    Text("Delete", color = Color(0xFFB3261E), fontSize = 12.sp)
+                                }
                             }
                         }
                     }

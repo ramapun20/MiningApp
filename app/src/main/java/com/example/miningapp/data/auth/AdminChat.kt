@@ -37,7 +37,8 @@ fun listenToAdminChat(
                     sender = document.getString("senderName") ?: "Admin",
                     text = text,
                     timestamp = timestamp,
-                    isOutgoing = senderId == userId
+                    isOutgoing = senderId == userId,
+                    documentId = document.id
                 )
             }
             onMessages(messages)
@@ -69,6 +70,28 @@ fun sendAdminChatMessage(
         .document(userId)
         .collection("messages")
         .add(message)
+        .addOnSuccessListener { onSuccess() }
+        .addOnFailureListener(onFailure)
+}
+
+fun deleteAdminChatMessage(
+    userId: String,
+    messageId: String,
+    onSuccess: () -> Unit,
+    onFailure: (Exception) -> Unit
+) {
+    val currentUserId = FirebaseAuth.getInstance().currentUser?.uid
+    if (currentUserId != userId) {
+        onFailure(IllegalStateException("Sign in to the account that owns this chat to delete a message."))
+        return
+    }
+
+    FirebaseFirestore.getInstance()
+        .collection(ADMIN_CHAT_COLLECTION)
+        .document(userId)
+        .collection("messages")
+        .document(messageId)
+        .delete()
         .addOnSuccessListener { onSuccess() }
         .addOnFailureListener(onFailure)
 }
