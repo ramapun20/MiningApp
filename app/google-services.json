@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "810690126582",
+    "project_id": "the-mining",
+    "storage_bucket": "the-mining.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:810690126582:android:2608011e6efaa2cc1202d7",
+        "android_client_info": {
+          "package_name": "com.mining.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDlHKsXNwQXLXoEPj7f9u-FRtgaRSaidVQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

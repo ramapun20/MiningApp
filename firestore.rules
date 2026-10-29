@@ -1,0 +1,73 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId} {
+      function isOwner() {
+        return request.auth != null && request.auth.uid == userId;
+      }
+
+      function hasValidProfile() {
+        return request.resource.data.keys().hasOnly([
+          'uid',
+          'phone',
+          'fullName',
+          'email',
+          'createdAt',
+          'updatedAt'
+        ])
+          && request.resource.data.uid == userId
+          && request.resource.data.phone is string
+          && request.resource.data.phone.size() > 0
+          && request.resource.data.createdAt is timestamp
+          && request.resource.data.updatedAt is timestamp
+          && (!('fullName' in request.resource.data)
+            || (request.resource.data.fullName is string
+              && request.resource.data.fullName.size() > 0
+              && request.resource.data.fullName.size() <= 120))
+          && (!('email' in request.resource.data)
+            || (request.resource.data.email is string
+              && request.resource.data.email.size() > 0
+              && request.resource.data.email.size() <= 254));
+      }
+
+      allow read: if isOwner();
+      allow create: if isOwner() && hasValidProfile();
+      allow update: if isOwner()
+        && hasValidProfile()
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if false;
+    }
+
+    match /supportChats/{userId}/messages/{messageId} {
+      function isOwner() {
+        return request.auth != null && request.auth.uid == userId;
+      }
+
+      function isAdmin() {
+        return request.auth != null && request.auth.token.admin == true;
+      }
+
+      function hasValidMessage() {
+        return request.resource.data.keys().hasOnly([
+          'senderUid',
+          'senderName',
+          'text',
+          'createdAt'
+        ])
+          && request.resource.data.senderUid == request.auth.uid
+          && request.resource.data.senderName is string
+          && request.resource.data.senderName.size() > 0
+          && request.resource.data.senderName.size() <= 120
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 4000
+          && request.resource.data.createdAt is timestamp;
+      }
+
+      allow read: if isOwner() || isAdmin();
+      allow create: if (isOwner() || isAdmin()) && hasValidMessage();
+      allow update, delete: if false;
+    }
+  }
+}
