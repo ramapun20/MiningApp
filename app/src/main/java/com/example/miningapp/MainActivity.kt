@@ -594,7 +594,7 @@ private fun MiningApp() {
                         fullName = ""
                         email = ""
                         isCreatingAccount = false
-                        page = Page.Phone
+                        page = Page.IdentityIntro
                     }
                 )
                 Page.IdentityIntro -> IdentityIntroScreen(
@@ -970,10 +970,10 @@ private fun IdentityIntroScreen(onBack: () -> Unit, onContinue: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(Modifier.height(18.dp))
-        TopLine(title = "Create account", onBack = onBack)
+        TopLine(title = "Sign in", onBack = onBack)
         Spacer(Modifier.height(30.dp))
         Text(
-            "Create your account",
+            "Verify your identity",
             fontSize = 24.sp,
             fontWeight = FontWeight.Bold,
             color = Ink,
@@ -981,7 +981,7 @@ private fun IdentityIntroScreen(onBack: () -> Unit, onContinue: () -> Unit) {
         )
         Spacer(Modifier.height(10.dp))
         Text(
-            "Register with your phone number to securely create your account and access the marketplace.",
+            "Verify your phone number to securely access your account and the marketplace.",
             fontSize = 15.sp,
             color = Muted,
             textAlign = TextAlign.Center
